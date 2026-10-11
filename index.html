@@ -226,6 +226,9 @@ section.sec { animation: fadeUp .35s ease; }
 .dots span:nth-child(2){animation-delay:.15s} .dots span:nth-child(3){animation-delay:.3s}
 @keyframes bounce { 0%,80%,100%{transform:scale(.5);opacity:.4} 40%{transform:scale(1);opacity:1} }
 
+.shake { animation: shake .35s; }
+@keyframes shake { 20%,60%{transform:translateX(-8px)} 40%,80%{transform:translateX(8px)} }
+
 /* ============ RESPONSIVE ============ */
 @media (max-width: 992px) {
   .sidebar { transform: translateX(-100%); }
@@ -262,6 +265,7 @@ section.sec { animation: fadeUp .35s ease; }
     </a>
     <a class="nav-link" href="#" data-section="buat-laporan" data-title="Buat Laporan">
       <span class="ico"><i class="fa-solid fa-file-circle-plus"></i></span> Buat Laporan
+      <i class="fa-solid fa-lock lock ms-auto" style="font-size:.7rem;color:var(--gold)"></i>
     </a>
     <a class="nav-link" href="#" data-section="divisi" data-title="Dashboard Divisi">
       <span class="ico"><i class="fa-solid fa-building"></i></span> Dashboard Divisi
@@ -384,7 +388,10 @@ section.sec { animation: fadeUp .35s ease; }
     <!-- ============ BUAT LAPORAN ============ -->
     <section class="sec" id="section-buat-laporan" style="display:none">
       <div class="card">
-        <div class="card-header py-3"><i class="fa-solid fa-file-circle-plus"></i> Formulir Pelaporan Keluhan / Kendala</div>
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <span><i class="fa-solid fa-file-circle-plus"></i> Formulir Pelaporan Keluhan / Kendala</span>
+          <button type="button" class="btn btn-sm btn-light" style="border-radius:10px" onclick="lockLaporan()"><i class="fa-solid fa-lock"></i> Kunci</button>
+        </div>
         <div class="card-body">
           <form id="formLaporan" onsubmit="event.preventDefault();submitLaporan();">
             <h6 class="fw-bold mb-3" style="color:var(--primary)"><i class="fa-solid fa-user"></i> Section 1 — Data Pelapor</h6>
@@ -492,6 +499,25 @@ section.sec { animation: fadeUp .35s ease; }
     <div class="ring"></div>
     <div class="small fw-semibold" id="loaderText">Memproses</div>
     <div class="dots mt-1"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<!-- ============ MODAL PASSWORD ============ -->
+<div class="modal fade" id="pwModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:380px">
+    <div class="modal-content">
+      <div class="modal-body text-center p-4">
+        <div class="brand-logo mx-auto mb-3" style="width:56px;height:56px;font-size:1.4rem;border-radius:16px"><i class="fa-solid fa-lock"></i></div>
+        <h6 class="fw-bold mb-1">Akses Terbatas</h6>
+        <p class="text-muted small mb-3">Masukkan password untuk membuka menu Buat Laporan.</p>
+        <input type="password" id="pwInput" class="form-control text-center mb-2" placeholder="Password" autocomplete="off">
+        <div id="pwError" class="text-danger small mb-2" style="display:none"></div>
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-light flex-fill" style="border-radius:10px" data-bs-dismiss="modal">Batal</button>
+          <button class="btn btn-grad flex-fill" onclick="submitPw()"><i class="fa-solid fa-unlock"></i> Buka</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -949,6 +975,7 @@ async function submitProgress() {
 
 /* ============ SUBMIT LAPORAN ============ */
 async function submitLaporan() {
+  if (!isUnlocked()) return openPwModal();
   const payload = {
     tanggal_laporan: $('fTanggal').value,
     nama_pelapor: $('fNama').value.trim(),
@@ -1047,8 +1074,60 @@ function renderSlaConfig() {
     </tr>`).join('');
 }
 
+/* ============ PASSWORD AKSES "BUAT LAPORAN" ============
+   Password default: ssi2026  → GANTI! Hitung hash baru dengan menjalankan
+   di Console browser:  ccHash('password_baru')  lalu tempel hasilnya ke PW_HASH. */
+const PW_HASH = 'k3wmqy81sg';
+function ccHash(s) {
+  let a = 0xdeadbeef, b = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 2654435761); b = Math.imul(b ^ c, 1597334677);
+  }
+  a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
+  b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
+  return (4294967296 * (2097151 & b) + (a >>> 0)).toString(36);
+}
+function isUnlocked() { try { return sessionStorage.getItem('cc_unlock') === '1'; } catch (_) { return false; } }
+let pwFails = 0, pwLockUntil = 0;
+function openPwModal() {
+  $('pwInput').value = ''; $('pwError').style.display = 'none';
+  bootstrap.Modal.getOrCreateInstance('#pwModal').show();
+  setTimeout(() => $('pwInput').focus(), 300);
+}
+function submitPw() {
+  const now = Date.now();
+  if (now < pwLockUntil) {
+    $('pwError').textContent = 'Terlalu banyak percobaan. Coba lagi ' + Math.ceil((pwLockUntil - now) / 1000) + ' detik lagi.';
+    $('pwError').style.display = 'block'; return;
+  }
+  if (ccHash($('pwInput').value) === PW_HASH) {
+    try { sessionStorage.setItem('cc_unlock', '1'); } catch (_) {}
+    pwFails = 0;
+    bootstrap.Modal.getInstance('#pwModal').hide();
+    document.querySelector('.sidebar .nav-link[data-section="buat-laporan"] .lock').className = 'fa-solid fa-lock-open lock';
+    goSection('buat-laporan');
+  } else {
+    pwFails++;
+    if (pwFails >= 5) { pwLockUntil = now + 30000; pwFails = 0; }
+    $('pwError').textContent = 'Password salah.';
+    $('pwError').style.display = 'block';
+    const m = document.querySelector('#pwModal .modal-content');
+    m.classList.remove('shake'); m.offsetWidth; m.classList.add('shake');
+    $('pwInput').select();
+  }
+}
+function lockLaporan() {
+  try { sessionStorage.removeItem('cc_unlock'); } catch (_) {}
+  document.querySelector('.sidebar .nav-link[data-section="buat-laporan"] .lock').className = 'fa-solid fa-lock lock';
+  goSection('dashboard');
+  showToast('Menu Buat Laporan dikunci kembali.', 'info');
+}
+
 /* ============ INIT ============ */
 document.addEventListener('DOMContentLoaded', () => {
+  if (isUnlocked()) document.querySelector('.sidebar .nav-link[data-section="buat-laporan"] .lock').className = 'fa-solid fa-lock-open lock';
+  $('pwInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitPw(); });
   const opt = arr => arr.map(x => `<option value="${x}">${x}</option>`).join('');
   $('fDivisiPelapor').innerHTML = opt(CFG.divisi);
   $('fDivisiTujuan').innerHTML = opt(CFG.divisi);
@@ -1067,6 +1146,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const target = el.dataset.section;
       if (!target) return;
+      if (target === 'buat-laporan' && !isUnlocked()) { openPwModal(); return; }
       document.querySelectorAll('.sidebar .nav-link').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       document.querySelectorAll('.content-area > section').forEach(s => s.style.display = 'none');
